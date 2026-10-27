@@ -1,7 +1,7 @@
 <p align="center"><img src="docs/assets/hero.svg" alt="Ember — local AI for Android. Bonsai 2B and 4B." width="100%"></p>
 
 <p align="center">
-  <a href="https://github.com/EruditeCoder108/LocalAIapp/releases/latest"><img alt="Download APK" src="https://img.shields.io/badge/Download-Android_APK-e53935?style=flat-square"></a>
+  <a href="https://github.com/EruditeCoder108/LocalAIapp/releases/tag/v0.1.0"><img alt="Download APK" src="https://img.shields.io/badge/Download-Android_APK-e53935?style=flat-square"></a>
   <img alt="Android 9 and newer" src="https://img.shields.io/badge/Android-9%2B-202020?style=flat-square">
   <img alt="ARM64" src="https://img.shields.io/badge/Architecture-ARM64-202020?style=flat-square">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/App_license-MIT-202020?style=flat-square"></a>
