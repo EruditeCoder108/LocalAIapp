@@ -1,0 +1,4 @@
+{
+    global: Java_dev_bonsai_pocket_*;
+    local: *;
+};

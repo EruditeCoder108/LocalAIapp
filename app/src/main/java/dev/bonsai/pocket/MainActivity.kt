@@ -130,6 +130,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     var draft by rememberSaveable(vm.currentId) { mutableStateOf("") }
     var deleteId by remember { mutableStateOf<String?>(null) }
     var webEnabled by rememberSaveable {mutableStateOf(false)}
+    var canvasEnabled by rememberSaveable {mutableStateOf(false)}
     var followRequest by remember {mutableIntStateOf(0)}
     var exportText by remember {mutableStateOf<String?>(null)}
     var pendingExport by rememberSaveable {mutableStateOf<String?>(null)}
@@ -137,6 +138,18 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     val filePicker=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val text=pendingExport;pendingExport=null
         if(result.resultCode==Activity.RESULT_OK && text!=null) result.data?.data?.let {uri->vm.exportResponse(uri,text,exportFormat) {scope.launch {snack.showSnackbar("File saved")}}}
+    }
+    var legacyArtifactSource by rememberSaveable {mutableStateOf<String?>(null)}
+    val artifactPicker=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {result->
+        val source=legacyArtifactSource;legacyArtifactSource=null
+        if(result.resultCode==Activity.RESULT_OK && source!=null) result.data?.data?.let {uri->vm.exportResponse(uri,source,ResponseFormat.TEXT) {scope.launch {snack.showSnackbar("File saved")}}}
+    }
+    fun downloadArtifact(file:CodeArtifact) {
+        if(android.os.Build.VERSION.SDK_INT>=29) vm.downloadArtifact(file) {scope.launch {snack.showSnackbar("Saved ${file.name} to Downloads/Ember")}}
+        else {
+            legacyArtifactSource=file.source
+            artifactPicker.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(file.mime).putExtra(Intent.EXTRA_TITLE,file.name))
+        }
     }
     val keyboard=LocalSoftwareKeyboardController.current
     val focus=LocalFocusManager.current
@@ -150,7 +163,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     val messages=vm.current.messages
     fun closeDrawer() { scope.launch { drawer.close() } }
     fun showSheet(name:String) {focus.clearFocus();keyboard?.hide();sheet=name}
-    fun send() { if(vm.send(draft,webEnabled)) { draft="";webEnabled=false;followRequest++; focus.clearFocus(); keyboard?.hide(); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } }
+    fun send() { if(vm.send(draft,webEnabled,canvasEnabled)) { draft="";webEnabled=false;followRequest++; focus.clearFocus(); keyboard?.hide(); haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove) } }
     LaunchedEffect(vm.pendingImage) {if(vm.pendingImage.isNotEmpty() && vm.pendingImage!=lastHapticAttachment) {lastHapticAttachment=vm.pendingImage;haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)}}
     LaunchedEffect(vm.currentId) {webEnabled=false}
     ModalNavigationDrawer(drawerState=drawer,gesturesEnabled=!vm.generating,drawerContent={
@@ -208,6 +221,11 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                 }
                 Surface(shape=RoundedCornerShape(26.dp),color=colors.surfaceContainer.copy(alpha=0.96f),border=androidx.compose.foundation.BorderStroke(1.dp,colors.outlineVariant),modifier=Modifier.fillMaxWidth()) {
                     Column {
+                        if(canvasEnabled) Row(Modifier.padding(start=16.dp,top=10.dp,end=8.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Code,null,Modifier.size(16.dp),tint=Signal)
+                            Text("Canvas · inline web preview",style=MaterialTheme.typography.labelMedium,modifier=Modifier.padding(start=8.dp).weight(1f))
+                            IconButton(onClick={canvasEnabled=false},enabled=!vm.generating,modifier=Modifier.size(30.dp)) {Icon(Icons.Outlined.Close,"Turn off canvas",Modifier.size(16.dp))}
+                        }
                         if(webEnabled) Row(Modifier.padding(start=16.dp,top=10.dp,end=8.dp),verticalAlignment=Alignment.CenterVertically) {
                             Icon(Icons.Outlined.Language,null,Modifier.size(16.dp),tint=Signal)
                             Text("Search web for this message",style=MaterialTheme.typography.labelMedium,modifier=Modifier.padding(start=8.dp).weight(1f))
@@ -223,6 +241,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                                 var toolsOpen by remember {mutableStateOf(false)}
                                 IconButton(onClick={toolsOpen=true},enabled=!vm.generating && !vm.preparingImage,modifier=Modifier.size(46.dp)) {Icon(Icons.Outlined.Add,"Chat tools",Modifier.size(23.dp))}
                                 DropdownMenu(expanded=toolsOpen,onDismissRequest={toolsOpen=false}) {
+                                    DropdownMenuItem(text={Text(if(canvasEnabled) "Turn off canvas" else "Canvas")},leadingIcon={Icon(Icons.Outlined.Code,null)},onClick={toolsOpen=false;canvasEnabled=!canvasEnabled},modifier=Modifier.testTag("canvasToggle"))
                                     DropdownMenuItem(text={Text("Attach image")},leadingIcon={Icon(Icons.Outlined.Image,null)},enabled=vm.visionInstalled,onClick={toolsOpen=false;photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))})
                                     DropdownMenuItem(text={Text(if(webEnabled) "Turn off web search" else "Search web")},leadingIcon={Icon(Icons.Outlined.Language,null)},onClick={toolsOpen=false;webEnabled=!webEnabled;if(webEnabled) scope.launch {snack.showSnackbar("Only this message's search words go online. Chats, memories and images stay on your phone.")}})
                                     DropdownMenuItem(text={Text("Memory")},leadingIcon={Icon(Icons.Outlined.BookmarkBorder,null)},onClick={toolsOpen=false;showSheet("memory")})
@@ -250,7 +269,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                     }
                 }
             } else ConversationTimeline(vm.currentId,messages.size,messages.lastOrNull()?.text?.length ?: 0,followRequest,Modifier.fillMaxSize().padding(padding)) {
-                    itemsIndexed(messages,key={i,_->"${vm.currentId}:$i"}) { i,msg -> MessageView(msg,vm.generating && i==messages.lastIndex,vm,onCopy={scope.launch {snack.showSnackbar("Copied")}},onExport={exportText=msg.text;showSheet("export")}) }
+                    itemsIndexed(messages,key={i,_->"${vm.currentId}:$i"}) { i,msg -> MessageView(msg,vm.generating && i==messages.lastIndex,vm,onCopy={scope.launch {snack.showSnackbar("Copied")}},onExport={exportText=msg.text;showSheet("export")},onArtifact=::downloadArtifact) }
                 }
         }
     }
@@ -293,7 +312,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     val bitmap by produceState<ImageBitmap?>(null,file.absolutePath) { value=withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.absolutePath,BitmapFactory.Options().apply {inSampleSize=4;inPreferredConfig=android.graphics.Bitmap.Config.RGB_565})?.asImageBitmap() } }
     bitmap?.let { Image(it,"Attached image",modifier,contentScale=ContentScale.Crop) }
 }
-@Composable private fun MessageView(msg:Message,streaming:Boolean,vm:BonsaiViewModel,onCopy:()->Unit,onExport:()->Unit) {
+@Composable private fun MessageView(msg:Message,streaming:Boolean,vm:BonsaiViewModel,onCopy:()->Unit,onExport:()->Unit,onArtifact:(CodeArtifact)->Unit) {
     val c=MaterialTheme.colorScheme; val clipboard=LocalClipboardManager.current
     val uriHandler=LocalUriHandler.current
     if(msg.role=="user") Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
@@ -308,8 +327,17 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
             Box(Modifier.size(5.dp).background(Signal,CircleShape)); Micro(Models.find(msg.modelId).header,Modifier.padding(start=8.dp))
         }
         Spacer(Modifier.height(13.dp))
-        if(msg.text.isBlank()) Text(if(vm.current.messages.any {it.image.isNotEmpty()}) "Reading your image…" else "Reading your message…",color=c.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium)
-        else SelectionContainer { MarkdownText(msg.text) }
+        if(msg.text.isBlank()) Text(if(msg.modelId==Models.LFM3.id && streaming) "Thinking…" else if(vm.current.messages.any {it.image.isNotEmpty()}) "Reading your image…" else "Reading your message…",color=c.onSurfaceVariant,style=MaterialTheme.typography.bodyMedium)
+        else {
+            val parts=remember(msg.text) {CodeArtifacts.parse(msg.text)}
+            val files=remember(parts) {parts.filterIsInstance<ResponsePart.File>().map {it.artifact}}
+            Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                parts.forEach {part->when(part) {
+                    is ResponsePart.Prose->if(part.text.isNotBlank()) SelectionContainer {MarkdownText(part.text)}
+                    is ResponsePart.File->ArtifactCard(part.artifact,files,msg.canvas,streaming,vm.exporting,onArtifact)
+                }}
+            }
+        }
         if(msg.sources.isNotEmpty()) Column(Modifier.padding(top=12.dp)) {
             Micro("WEB SOURCES")
             msg.sources.forEachIndexed {i,source->TextButton(onClick={runCatching {uriHandler.openUri(source.url)}},contentPadding=PaddingValues(horizontal=10.dp,vertical=10.dp),modifier=Modifier.fillMaxWidth()) {
@@ -347,11 +375,12 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
             }
         }
     }
-    val installedBytes=Models.all.sumOf { (if(vm.installed(it)) it.bytes else 0L)+(if(vm.visionFile(it).length()==it.visionBytes) it.visionBytes else 0L) }
+    val installedBytes=Models.all.sumOf { (if(vm.installed(it)) it.bytes else 0L)+(if(it.supportsVision && vm.visionFile(it).length()==it.visionBytes) it.visionBytes else 0L) }
     Micro("INSTALLED MODELS · ${"%.2f".format(java.util.Locale.US,installedBytes/1e9)} GB",Modifier.padding(top=8.dp,bottom=16.dp))
-    Text("Downloads come directly from PrismML on Hugging Face. Keep Ember open; leaving the app pauses the transfer. Downloading does not load a model into RAM.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("${vm.selectedModel.publisher} · Downloads from Hugging Face. Keep Ember open; leaving the app pauses the transfer. Downloading does not load a model into RAM.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
     if(vm.modelState==ModelState.MISSING) Button(onClick=vm::downloadModel,modifier=Modifier.fillMaxWidth()) {Text("Download ${vm.selectedModel.shortName} · ${vm.selectedModel.size}")}
-    if(!vm.visionInstalled) OutlinedButton(onClick=vm::downloadVision,enabled=vm.modelState in listOf(ModelState.ASLEEP,ModelState.MISSING),modifier=Modifier.fillMaxWidth()) {Text("Download image support · ${vm.selectedModel.visionBytes/1_000_000} MB")}
+    if(vm.selectedModel.supportsVision && !vm.visionInstalled) OutlinedButton(onClick=vm::downloadVision,enabled=vm.modelState in listOf(ModelState.ASLEEP,ModelState.MISSING),modifier=Modifier.fillMaxWidth()) {Text("Download image support · ${vm.selectedModel.visionBytes/1_000_000} MB")}
+    if(!vm.selectedModel.supportsVision) Text("Text only · Images are available with the Bonsai models.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=12.dp))
     if(vm.downloading) TextButton(onClick=vm::cancelDownload,modifier=Modifier.fillMaxWidth()) {Text("Pause download")}
     TextButton(onClick=onImport,enabled=vm.modelState in listOf(ModelState.ASLEEP,ModelState.MISSING),modifier=Modifier.fillMaxWidth()) {Text("Import model file instead")}
 }
@@ -365,15 +394,15 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     Micro("MODEL")
     TextButton(onClick=onModels,modifier=Modifier.fillMaxWidth()) {Text(vm.selectedModel.displayName,Modifier.weight(1f));Icon(Icons.Outlined.ChevronRight,null)}
     if(vm.modelState==ModelState.READY) OutlinedButton(onClick=vm::unload,enabled=!vm.generating,modifier=Modifier.fillMaxWidth()) {Text("Unload model")}
-    Text(if(vm.visionInstalled) "Image support installed. Vision loads only for image requests." else "Image support not installed for this model.",color=c.onSurfaceVariant,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=12.dp,bottom=24.dp))
+    Text(if(!vm.selectedModel.supportsVision) "This model supports text only." else if(vm.visionInstalled) "Image support installed. Vision loads only for image requests." else "Image support not installed for this model.",color=c.onSurfaceVariant,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=12.dp,bottom=24.dp))
     Micro("RESPONSE LENGTH")
     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {listOf(256 to "Short",512 to "Balanced",1024 to "Long").forEach {(n,label)->FilterChip(selected=vm.responseLimit==n,onClick={vm.setLimit(n)},enabled=!vm.generating,label={Text(label)})}}
-    Text("Thinking off · 4,096-token context. Older turns leave active context as the chat grows.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant,modifier=Modifier.padding(top=4.dp,bottom=24.dp))
+    Text("Direct answers · 4,096-token context. Older turns leave active context as the chat grows.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant,modifier=Modifier.padding(top=4.dp,bottom=24.dp))
     Micro("PROCESSING")
     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {listOf(2,4,6).forEach {n->FilterChip(selected=vm.threads==n,onClick={vm.updateThreads(n)},enabled=vm.modelState==ModelState.ASLEEP || vm.modelState==ModelState.MISSING,label={Text("$n threads")})}}
     Text("4 threads recommended. Unload the model before changing.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant,modifier=Modifier.padding(top=4.dp,bottom=22.dp))
     OutlinedButton(onClick=onImport,enabled=vm.modelState==ModelState.ASLEEP || vm.modelState==ModelState.MISSING,modifier=Modifier.fillMaxWidth()) {Text("Import ${vm.selectedModel.shortName} model file")}
-    TextButton(onClick=onVisionImport,enabled=vm.modelState==ModelState.ASLEEP || vm.modelState==ModelState.MISSING,modifier=Modifier.fillMaxWidth()) {Text("Import ${vm.selectedModel.shortName} vision file")}
+    if(vm.selectedModel.supportsVision) TextButton(onClick=onVisionImport,enabled=vm.modelState==ModelState.ASLEEP || vm.modelState==ModelState.MISSING,modifier=Modifier.fillMaxWidth()) {Text("Import ${vm.selectedModel.shortName} vision file")}
     HorizontalDivider(Modifier.padding(vertical=22.dp),color=c.outlineVariant)
-    Text("EMBER ${BuildConfig.VERSION_NAME}\nBonsai models by PrismML · Based on Qwen\nModels licensed under Apache 2.0\nAI can make mistakes. Check important answers.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
+    Text("EMBER ${BuildConfig.VERSION_NAME}\nLFM3 by Liquid AI · LFM Open License v1.0\nBonsai by PrismML · Based on Qwen · Apache 2.0\nQwen3.5 Heretic by darrellbest · Apache 2.0\nAI can make mistakes. Check important answers.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
 }

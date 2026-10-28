@@ -1,0 +1,14 @@
+LFM3-1.7B by Liquid AI
+Publisher: https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF
+Revision: b3f2ae5d73cd3c91bf40e8ba752c648aa05dffdf
+File: LFM3-1.7B-QAD-Q4_0.gguf (Quantization-Aware Distillation, Q4_0)
+SHA-256: 43a7d09a0e9cba91b63eb7052488b9564569bddfd65754d2e426465e572a7452
+
+Weights are downloaded separately and are not included in the APK or repository.
+The weights use the LFM Open License v1.0, not the application's MIT license.
+See liquid-model-LICENSE.txt for the full terms, including attribution and the
+commercial use revenue threshold.
+
+LFM3 inference uses a separate copy of llama.cpp (MIT), pinned to b11938,
+commit 19cce6919992fdffd92e0ac152caaf1e2b8f254e. Its symbols are isolated from
+the PrismML fork used for Bonsai PQ2_0. See llama.cpp-LICENSE.txt.

@@ -18,10 +18,10 @@ enum class ResponseFormat(val label: String, val extension: String, val mime: St
 
 object ResponseFiles {
     private val fence = Regex("(?s)```([^\\n`]*)\\n(.*?)```")
-    fun code(text: String): Pair<String, String>? = fence.find(text)?.let { it.groupValues[1].trim().lowercase() to it.groupValues[2].trimEnd() }
+    fun code(text: String): Pair<String, String>? = CodeArtifacts.parse(text).filterIsInstance<ResponsePart.File>().firstOrNull()?.artifact?.let {it.language.lowercase() to it.source}
     fun extension(text: String, format: ResponseFormat): String = if (format != ResponseFormat.CODE) format.extension else when (code(text)?.first) {
         "python", "py" -> "py"; "javascript", "js" -> "js"; "typescript", "ts" -> "ts"
-        "html" -> "html"; "css" -> "css"; "json" -> "json"; "kotlin", "kt" -> "kt"
+        "html" -> "html"; "svg" -> "svg"; "css" -> "css"; "json" -> "json"; "kotlin", "kt" -> "kt"
         "java" -> "java"; "c" -> "c"; "cpp", "c++" -> "cpp"; "sql" -> "sql"; "xml" -> "xml"
         "bash", "sh" -> "sh"; "csv" -> "csv"; else -> "txt"
     }
@@ -30,7 +30,7 @@ object ResponseFiles {
         when (format) {
             ResponseFormat.PDF -> pdf(text, output)
             ResponseFormat.HTML -> {
-                val html = fence.findAll(text).firstOrNull { it.groupValues[1].trim().lowercase() in listOf("html", "htm") }?.groupValues?.get(2)
+                val html = CodeArtifacts.parse(text).filterIsInstance<ResponsePart.File>().firstOrNull {it.artifact.extension in listOf("html","htm")}?.artifact?.source
                     ?: text.trim().takeIf { it.startsWith("<!doctype html", true) || it.startsWith("<html", true) }
                     ?: "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Response</title><style>body{max-width:800px;margin:40px auto;padding:0 24px;font:17px/1.65 system-ui}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style></head><body><pre>${escape(text)}</pre></body></html>"
                 output.write(html.toByteArray(Charsets.UTF_8))
