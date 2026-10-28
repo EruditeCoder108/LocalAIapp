@@ -6,6 +6,10 @@ $adbArgs = @()
 if ($Serial) { $adbArgs += @('-s', $Serial) }
 $apkPath = Join-Path $PSScriptRoot 'app/build/outputs/apk/debug/app-debug.apk'
 if (-not (Test-Path -LiteralPath $apkPath)) { throw 'Run setup.ps1 first.' }
+$metadataPath = Join-Path (Split-Path -Parent $apkPath) 'output-metadata.json'
+if (-not (Test-Path -LiteralPath $metadataPath)) { throw 'Build metadata is missing. Run setup.ps1 again.' }
+$builtPackage = (Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json).applicationId
+if ($builtPackage -ne $ApplicationId) { throw "This APK is $builtPackage. Build with setup.ps1 -ApplicationId $ApplicationId before installing." }
 & $adbPath @adbArgs install -r $apkPath
 if ($LASTEXITCODE -ne 0) { throw 'APK installation failed.' }
 & $adbPath @adbArgs shell am force-stop $ApplicationId

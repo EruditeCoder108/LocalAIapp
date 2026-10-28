@@ -86,12 +86,32 @@ class MainActivity:ComponentActivity() {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
         setContent {
             val dark=when(vm.theme) { 1->false; 2->true; else->isSystemInDarkTheme() }
+            val processing=vm.generating || vm.preparingImage || vm.modelState==ModelState.LOADING || vm.modelState==ModelState.IMPORTING
+            DisposableEffect(processing) {
+                if(processing) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                onDispose {window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)}
+            }
             SideEffect { enableEdgeToEdge(statusBarStyle=if(dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT) else SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT),navigationBarStyle=if(dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT) else SystemBarStyle.light(android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT)) }
-            MaterialTheme(colorScheme=if(dark) Dark else Light,typography=AppType) { BonsaiApp(vm) }
+            EmberTheme(dark) { BonsaiApp(vm) }
         }
     }
     override fun onStart() { super.onStart(); vm.setForeground(true); vm.refreshModel() }
     override fun onStop() { vm.setForeground(false); super.onStop() }
+}
+
+// Set every Material surface/accent used by sheets, menus, dialogs and selection UI.
+// Unspecified roles otherwise inherit Material's purple palette.
+@Composable fun EmberTheme(dark:Boolean,content:@Composable ()->Unit) {
+    val base=if(dark) Dark else Light
+    val scheme=base.copy(
+        tertiary=base.secondary,onTertiary=base.onPrimary,tertiaryContainer=base.secondaryContainer,onTertiaryContainer=base.onSecondaryContainer,
+        inverseSurface=base.onSurface,inverseOnSurface=base.surface,inversePrimary=base.onPrimary,
+        surfaceTint=Color.Transparent,surfaceDim=base.background,surfaceBright=base.surfaceContainerHigh,
+        surfaceContainerLowest=base.background,surfaceContainerHighest=base.surfaceContainerHigh,
+        errorContainer=if(dark) Color(0xFF3B1515) else Color(0xFFFFE5E5),onError=Color.White,onErrorContainer=if(dark) Color(0xFFFFB4AB) else Color(0xFF8C1D18),
+        outline=if(dark) Color(0xFF888888) else Color(0xFF797979),scrim=Color.Black)
+    MaterialTheme(colorScheme=scheme,typography=AppType,content=content)
 }
 
 @Composable private fun Micro(text:String,modifier:Modifier=Modifier,color:Color=MaterialTheme.colorScheme.onSurfaceVariant) {
@@ -208,7 +228,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
             Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding().padding(horizontal=16.dp)) {
                 if(vm.modelState==ModelState.LOADING || vm.modelState==ModelState.IMPORTING) {
                     if(vm.modelState==ModelState.IMPORTING) LinearProgressIndicator(progress={vm.importProgress},modifier=Modifier.fillMaxWidth().height(2.dp),color=Signal,trackColor=colors.outlineVariant)
-                    else HorizontalDivider(thickness=2.dp,color=Signal)
+                    else LinearProgressIndicator(modifier=Modifier.fillMaxWidth().height(2.dp),color=Signal,trackColor=colors.outlineVariant)
                     Micro(vm.status.uppercase(),Modifier.padding(vertical=10.dp))
                     if(vm.downloading) TextButton(onClick=vm::cancelDownload) {Text("Pause download")}
                 } else if(messages.isNotEmpty()) {
@@ -240,7 +260,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                             Box {
                                 var toolsOpen by remember {mutableStateOf(false)}
                                 IconButton(onClick={toolsOpen=true},enabled=!vm.generating && !vm.preparingImage,modifier=Modifier.size(46.dp)) {Icon(Icons.Outlined.Add,"Chat tools",Modifier.size(23.dp))}
-                                DropdownMenu(expanded=toolsOpen,onDismissRequest={toolsOpen=false}) {
+                                DropdownMenu(expanded=toolsOpen,onDismissRequest={toolsOpen=false},containerColor=colors.surfaceContainerHigh) {
                                     DropdownMenuItem(text={Text(if(canvasEnabled) "Turn off canvas" else "Canvas")},leadingIcon={Icon(Icons.Outlined.Code,null)},onClick={toolsOpen=false;canvasEnabled=!canvasEnabled},modifier=Modifier.testTag("canvasToggle"))
                                     DropdownMenuItem(text={Text("Attach image")},leadingIcon={Icon(Icons.Outlined.Image,null)},enabled=vm.visionInstalled,onClick={toolsOpen=false;photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))})
                                     DropdownMenuItem(text={Text(if(webEnabled) "Turn off web search" else "Search web")},leadingIcon={Icon(Icons.Outlined.Language,null)},onClick={toolsOpen=false;webEnabled=!webEnabled;if(webEnabled) scope.launch {snack.showSnackbar("Only this message's search words go online. Chats, memories and images stay on your phone.")}})
@@ -268,7 +288,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                         Button(onClick={if(vm.modelState==ModelState.READY) vm.unload() else if(vm.modelState==ModelState.MISSING) vm.downloadModel() else vm.load()},enabled=vm.modelState!=ModelState.LOADING && vm.modelState!=ModelState.IMPORTING,interactionSource=loadPress.first,modifier=loadPress.second,colors=ButtonDefaults.buttonColors(containerColor=colors.onSurface,contentColor=colors.background),shape=RoundedCornerShape(14.dp),contentPadding=PaddingValues(horizontal=16.dp,vertical=12.dp)) { Text(if(vm.modelState==ModelState.READY) "Unload" else if(vm.modelState==ModelState.MISSING) "Download" else "Load model") }
                     }
                 }
-            } else ConversationTimeline(vm.currentId,messages.size,messages.lastOrNull()?.text?.length ?: 0,followRequest,Modifier.fillMaxSize().padding(padding)) {
+            } else ConversationTimeline(vm.currentId,messages.size,31*(messages.lastOrNull()?.text?.length ?: 0)+(messages.lastOrNull()?.outcome?.hashCode() ?: 0)+(if(vm.generating) 1 else 0),followRequest,Modifier.fillMaxSize().padding(padding)) {
                     itemsIndexed(messages,key={i,_->"${vm.currentId}:$i"}) { i,msg -> MessageView(msg,vm.generating && i==messages.lastIndex,vm,onCopy={scope.launch {snack.showSnackbar("Copied")}},onExport={exportText=msg.text;showSheet("export")},onArtifact=::downloadArtifact) }
                 }
         }
@@ -277,6 +297,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     deleteId?.let { id -> AlertDialog(onDismissRequest={deleteId=null},title={Text("Delete conversation?")},text={Text("This removes the chat and its attached images from this phone.")},confirmButton={TextButton(onClick={vm.deleteChat(id);deleteId=null}) {Text("Delete",color=Signal)}},dismissButton={TextButton(onClick={deleteId=null}) {Text("Cancel")}}) }
     if(sheet!=null) ModalBottomSheet(onDismissRequest={sheet=null},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=colors.surface) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(bottom=36.dp)) {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {IconButton(onClick={sheet=null}) {Icon(Icons.Outlined.Close,"Close panel")}}
             when(sheet) {
                 "models" -> ModelSheet(vm,onSelected={sheet=null},onImport={sheet=null;modelPicker.launch(arrayOf("*/*"))})
                 "memory" -> MemorySheet(vm)
@@ -320,6 +341,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
             Column(Modifier.padding(15.dp)) {
                 if(msg.image.isNotEmpty()) { ImageThumbnail(vm.imageFile(msg.image),Modifier.size(192.dp).clip(RoundedCornerShape(12.dp)));Spacer(Modifier.height(10.dp)) }
                 SelectionContainer { Text(msg.text,style=MaterialTheme.typography.bodyLarge) }
+                msg.codeFile?.let {file->Spacer(Modifier.height(10.dp));ArtifactCard(file,listOf(file),false,false,vm.exporting,onArtifact)}
             }
         }
     } else Column(Modifier.fillMaxWidth()) {
@@ -334,9 +356,13 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
             Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 parts.forEach {part->when(part) {
                     is ResponsePart.Prose->if(part.text.isNotBlank()) SelectionContainer {MarkdownText(part.text)}
-                    is ResponsePart.File->ArtifactCard(part.artifact,files,msg.canvas,streaming,vm.exporting,onArtifact)
+                    is ResponsePart.File->ArtifactCard(part.artifact,files,msg.canvas,streaming,vm.exporting,onArtifact,if(vm.modelState==ModelState.READY && !vm.generating && !vm.preparingImage && vm.pendingImage.isEmpty()) vm::repairArtifact else null)
                 }}
             }
+        }
+        if(!streaming && !vm.generating && msg==vm.current.messages.lastOrNull() && !GenerationPolicy.usable(msg)) {
+            Text(if(msg.outcome=="length" || msg.note.contains("Response limit reached")) "This reply reached its limit. A smaller request can produce a complete file." else "You can retry this request with the model loaded.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant,modifier=Modifier.padding(top=12.dp))
+            OutlinedButton(onClick={vm.retryLast()},enabled=vm.modelState==ModelState.READY && !vm.preparingImage && vm.pendingImage.isEmpty(),modifier=Modifier.testTag("retryResponse")) {Icon(Icons.Outlined.Refresh,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Try again")}
         }
         if(msg.sources.isNotEmpty()) Column(Modifier.padding(top=12.dp)) {
             Micro("WEB SOURCES")
@@ -347,9 +373,9 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
         if(!streaming && msg.text.isNotBlank()) Row(Modifier.fillMaxWidth().padding(top=8.dp),verticalAlignment=Alignment.CenterVertically) {
             var details by remember(msg.note) {mutableStateOf(false)}
             if(details) Text(msg.note,style=MaterialTheme.typography.labelSmall,color=c.onSurfaceVariant,modifier=Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
-            IconButton(onClick={details=!details},modifier=Modifier.size(36.dp)) {Icon(Icons.Outlined.Info,"Response details",Modifier.size(16.dp),tint=c.onSurfaceVariant)}
-            IconButton(onClick={clipboard.setText(AnnotatedString(msg.text));onCopy()},modifier=Modifier.size(36.dp)) {Icon(Icons.Outlined.ContentCopy,"Copy response",Modifier.size(16.dp),tint=c.onSurfaceVariant)}
-            IconButton(onClick=onExport,enabled=!vm.exporting,modifier=Modifier.size(36.dp)) {Icon(Icons.Outlined.FileDownload,"Save response",Modifier.size(17.dp),tint=c.onSurfaceVariant)}
+            IconButton(onClick={details=!details}) {Icon(Icons.Outlined.Info,"Response details",Modifier.size(18.dp),tint=c.onSurfaceVariant)}
+            IconButton(onClick={clipboard.setText(AnnotatedString(msg.text));onCopy()}) {Icon(Icons.Outlined.ContentCopy,"Copy response",Modifier.size(18.dp),tint=c.onSurfaceVariant)}
+            IconButton(onClick=onExport,enabled=!vm.exporting) {Icon(Icons.Outlined.FileDownload,"Save response",Modifier.size(19.dp),tint=c.onSurfaceVariant)}
         }
     }
 }
@@ -397,7 +423,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     Text(if(!vm.selectedModel.supportsVision) "This model supports text only." else if(vm.visionInstalled) "Image support installed. Vision loads only for image requests." else "Image support not installed for this model.",color=c.onSurfaceVariant,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=12.dp,bottom=24.dp))
     Micro("RESPONSE LENGTH")
     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {listOf(256 to "Short",512 to "Balanced",1024 to "Long").forEach {(n,label)->FilterChip(selected=vm.responseLimit==n,onClick={vm.setLimit(n)},enabled=!vm.generating,label={Text(label)})}}
-    Text("Direct answers · 4,096-token context. Older turns leave active context as the chat grows.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant,modifier=Modifier.padding(top=4.dp,bottom=24.dp))
+    Text("Applies to ordinary answers. Code and Canvas get up to 2,048 answer tokens. LFM3 reasoning has a separate budget. Older turns leave the 4,096-token active context as the chat grows.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant,modifier=Modifier.padding(top=4.dp,bottom=24.dp))
     Micro("PROCESSING")
     Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {listOf(2,4,6).forEach {n->FilterChip(selected=vm.threads==n,onClick={vm.updateThreads(n)},enabled=vm.modelState==ModelState.ASLEEP || vm.modelState==ModelState.MISSING,label={Text("$n threads")})}}
     Text("4 threads recommended. Unload the model before changing.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant,modifier=Modifier.padding(top=4.dp,bottom=22.dp))

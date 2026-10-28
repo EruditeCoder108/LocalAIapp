@@ -15,6 +15,8 @@ The interface uses a restrained black, white and red palette, dot-matrix letteri
 
 > **Development update.** This checkout adds LFM3, named file downloads and Canvas. The linked public v0.1.0 APK contains the earlier Bonsai feature set; build this checkout for the new features. Device checks and remaining limits are described in [Build Ember](docs/BUILDING.md).
 
+Version 0.2.1 fixes empty LFM3 code replies, adds retry and Canvas repair actions, and matches app panels to the selected theme. See the [changelog](CHANGELOG.md) and [reliability audit](docs/AUDIT-0.2.1.md) for validation and model-quality limits.
+
 ## Start in a minute
 
 1. Download **[Ember-0.1.0-arm64.apk](https://github.com/EruditeCoder108/LocalAIapp/releases/download/v0.1.0/Ember-0.1.0-arm64.apk)** and install it on a compatible Android phone.
@@ -55,7 +57,7 @@ Only one language model is loaded at a time. Switching unloads the previous mode
 
 Chat, image input, memory and export work offline after the necessary downloads. Web search is explicitly selected per message and requires internet. The free search endpoint can change, rate-limit requests or return a CAPTCHA; Ember reports those failures.
 
-Canvas runs web code in a sandboxed iframe inside WebView. Network requests, device permissions, native bridges and file/content access are blocked. Use self-contained pages; remote fonts, CDNs, package installation, Python and Node execution are unsupported. Preview edits affect the current preview and download, not the saved conversation's original source. The app name and empty-state wordmark both read **Ember**.
+Canvas runs web code in a sandboxed iframe inside WebView. Network requests, device permissions, native bridges and file/content access are blocked. Use self-contained pages; remote fonts, CDNs, package installation, Python and Node execution are unsupported. Preview edits affect the current preview and download, not the saved conversation's original source. When a script fails, **Fix with Ember** attaches the current source and error to a new correction request; this action requires a loaded model and does not guarantee a correct repair. The app name and empty-state wordmark both read **Ember**.
 
 ## Storage, memory and privacy
 
@@ -71,7 +73,7 @@ Canvas runs web code in a sandboxed iframe inside WebView. Network requests, dev
 
 Ember can generate incorrect answers. A source number is not a guarantee that a claim is supported. Image input is resized and token-limited; dense text and small details can be missed. PDF export uses basic text layout.
 
-Semantic memory, automatic recall of old conversations, Python execution, autonomous tools and phone control are **not shipped features**. The active context is 4,096 tokens. Bonsai requests thinking off; LFM3 uses its reasoning template and streams only the parsed answer. Canvas allows up to 2,048 generated tokens so complete small web files have room to finish; long files can still reach the limit. See [VISION.md](VISION.md) for future directions.
+Semantic memory, automatic recall of old conversations, Python execution, autonomous tools and phone control are **not shipped features**. The active context is 4,096 tokens. Bonsai requests thinking off; LFM3 uses its reasoning template, bounds hidden reasoning separately (32 tokens for short answers, 128 for long/code answers), and streams only the parsed answer. Code requests and follow-up edits get up to 2,048 answer tokens whether Canvas is enabled or not; ordinary answers use the response-length preference. Large files can still reach the limit. Failed and interrupted turns stay visible in chat but are excluded from future model context. The latest unsuccessful reply has a **Try again** action. Canvas surfaces script errors, but a completed file is not a guarantee that model-written code is correct. See [VISION.md](VISION.md) for future directions.
 
 ## Build and contribute
 

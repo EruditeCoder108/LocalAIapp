@@ -62,7 +62,7 @@ object CodeArtifacts {
                 raw.startsWith("<svg",true) || (raw.startsWith("<?xml") && raw.contains("<svg"))->"svg"
                 else->null
             }
-            if(extension!=null) return listOf(ResponsePart.File(CodeArtifact(if(extension=="html") "index.html" else "drawing.svg",text,extension)))
+            if(extension!=null) return listOf(ResponsePart.File(CodeArtifact(if(extension=="html") "index.html" else "drawing.svg",text,extension,Regex("</$extension\\s*>",RegexOption.IGNORE_CASE).containsMatchIn(raw))))
         }
         return parts
     }

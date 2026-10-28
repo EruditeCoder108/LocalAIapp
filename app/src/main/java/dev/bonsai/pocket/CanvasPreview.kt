@@ -11,7 +11,10 @@ import android.webkit.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -21,6 +24,9 @@ import java.io.ByteArrayInputStream
 /** No native bridge, filesystem, network, popups, browser downloads, or device permissions. */
 @SuppressLint("SetJavaScriptEnabled")
 class SandboxWebView(context:Context,onFailure:()->Unit = {}) : WebView(context) {
+    var scriptError:String?=null;private set
+    var onScriptError:(String)->Unit = {}
+    var onRendererFailure:()->Unit = onFailure
     init {
         layoutParams=ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT)
         background=GradientDrawable().apply {setColor(Color.WHITE);cornerRadius=16*resources.displayMetrics.density}
@@ -46,9 +52,19 @@ class SandboxWebView(context:Context,onFailure:()->Unit = {}) : WebView(context)
             @Deprecated("Legacy WebView callback")
             override fun shouldOverrideUrlLoading(view:WebView,url:String)=url !in setOf("about:blank","about:srcdoc")
             override fun shouldInterceptRequest(view:WebView,request:WebResourceRequest):WebResourceResponse? = blocked(request.url)
-            override fun onRenderProcessGone(view:WebView,detail:RenderProcessGoneDetail):Boolean {onFailure();return true}
+            override fun onRenderProcessGone(view:WebView,detail:RenderProcessGoneDetail):Boolean {onRendererFailure();return true}
         }
         webChromeClient=object:WebChromeClient() {
+            override fun onConsoleMessage(message:ConsoleMessage):Boolean {
+                if(message.messageLevel()==ConsoleMessage.MessageLevel.ERROR) {
+                    val detail="Line ${message.lineNumber()}: ${message.message().take(200)}"
+                    // CSP/resource blocks are useful preview diagnostics, but are not
+                    // JavaScript exceptions. Keep those distinct for runtime verification.
+                    if(Regex("\\b(?:Syntax|Reference|Type|Range|Eval|URI)?Error:").containsMatchIn(message.message())) scriptError=detail
+                    onScriptError(detail)
+                }
+                return true
+            }
             override fun onPermissionRequest(request:PermissionRequest) {request.deny()}
             override fun onGeolocationPermissionsShowPrompt(origin:String,callback:GeolocationPermissions.Callback) {callback.invoke(origin,false,false)}
             override fun onShowFileChooser(view:WebView,callback:ValueCallback<Array<Uri>>,params:FileChooserParams):Boolean {callback.onReceiveValue(null);return true}
@@ -63,22 +79,31 @@ class SandboxWebView(context:Context,onFailure:()->Unit = {}) : WebView(context)
         })
         contentDescription="Canvas preview"
     }
-    fun showDocument(html:String) {loadDataWithBaseURL(CanvasDocument.ORIGIN,html,"text/html","UTF-8",null)}
+    fun showDocument(html:String) {scriptError=null;loadDataWithBaseURL(CanvasDocument.ORIGIN,html,"text/html","UTF-8",null)}
     companion object {
         fun blocked(uri:Uri):WebResourceResponse? = if(uri.scheme in setOf("data","blob","about")) null else
             WebResourceResponse("text/plain","UTF-8",403,"Blocked",emptyMap(),ByteArrayInputStream(ByteArray(0)))
     }
 }
 
-@Composable fun CanvasPreview(file:CodeArtifact,companions:List<CodeArtifact>,modifier:Modifier=Modifier) {
+@Composable fun CanvasPreview(file:CodeArtifact,companions:List<CodeArtifact>,modifier:Modifier=Modifier,onFix:((String)->Unit)?=null) {
     val document=remember(file,companions) {CanvasDocument.html(file,companions)}
     var failed by remember(document) {mutableStateOf(false)}
+    var scriptError by remember(document) {mutableStateOf<String?>(null)}
     if(failed) Box(modifier.padding(20.dp)) {Text("Preview stopped. Close and reopen it to run again.",color=MaterialTheme.colorScheme.onSurfaceVariant)}
-    else AndroidView(
-        factory={context->SandboxWebView(context) {failed=true}},
-        modifier=modifier.testTag("canvas-${file.name}"),
+    else Box(modifier) {
+        AndroidView(
+        factory={context->SandboxWebView(context) {failed=true}.also {it.onScriptError={detail->scriptError=detail}}},
+        modifier=Modifier.fillMaxSize().testTag("canvas-${file.name}"),
         onReset=null,
         onRelease={view->view.stopLoading();view.removeAllViews();view.destroy()},
-        update={view->if(view.tag!=document) {view.tag=document;view.showDocument(document)}}
+        update={view->view.onScriptError={detail->scriptError=detail};view.onRendererFailure={failed=true};if(view.tag!=document) {view.tag=document;view.showDocument(document)}}
     )
+        scriptError?.let {detail->Surface(color=MaterialTheme.colorScheme.errorContainer,contentColor=MaterialTheme.colorScheme.onErrorContainer,shape=MaterialTheme.shapes.medium,modifier=Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp)) {
+            Column(Modifier.padding(12.dp)) {
+                Text("Preview error · $detail\nOpen Code to edit, or ask Ember to correct the file.",style=MaterialTheme.typography.bodySmall)
+                if(onFix!=null) TextButton(onClick={onFix(detail)}) {Text("Fix with Ember")}
+            }
+        }}
+    }
 }

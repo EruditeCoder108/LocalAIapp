@@ -20,8 +20,8 @@ import androidx.compose.ui.unit.dp
         Text("Use saved memory",Modifier.weight(1f));Switch(checked=vm.memoryEnabled,onCheckedChange=vm::enableMemory)
     }
     OutlinedTextField(draft,{if(it.length<=500) draft=it},label={Text("Add a fact or preference")},placeholder={Text("I prefer short explanations")},modifier=Modifier.fillMaxWidth().padding(top=14.dp),maxLines=4)
-    Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(pin,{pin=it});Text("Always include",style=MaterialTheme.typography.bodySmall)}
-    Button(onClick={vm.addMemory(draft,pin);draft="";pin=false},enabled=draft.isNotBlank() && vm.memoryReady && !vm.memoryBusy,modifier=Modifier.fillMaxWidth()) {Text("Save memory")}
+    Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(pin,{pin=it},enabled=pin || vm.memories.count {it.pinned}<3);Text("Always include",style=MaterialTheme.typography.bodySmall)}
+    Button(onClick={vm.addMemory(draft,pin) {draft="";pin=false}},enabled=draft.isNotBlank() && vm.memoryReady && !vm.memoryBusy,modifier=Modifier.fillMaxWidth()) {Text("Save memory")}
     Text("You can also type “Remember that …” in a chat. Nothing is extracted from your chats automatically.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(vertical=18.dp))
     vm.memories.forEach {fact->
         Surface(shape=MaterialTheme.shapes.large,color=MaterialTheme.colorScheme.surfaceContainerHigh,modifier=Modifier.fillMaxWidth().padding(bottom=10.dp)) {

@@ -9,6 +9,7 @@
 #include <vector>
 #include "llama.h"
 #include "chat.h"
+#include "reasoning-budget.h"
 
 using Clock = std::chrono::steady_clock;
 namespace {
@@ -66,6 +67,8 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_bonsai_pocket_LiquidNativeBridge_g
     try {
         if(!handle) throw std::runtime_error("Load LFM3 before sending a message.");
         if(maxTokens<1 || maxTokens>2048) throw std::runtime_error("Unsupported response length.");
+        const int reasoningBudget=maxTokens>=1024 ? 128 : 32;
+        const int reasoningReserve=reasoningBudget+32; // tags and UTF-8 completion
         const auto size=env->GetArrayLength(roles);
         if(size!=env->GetArrayLength(contents) || size!=env->GetArrayLength(images)) throw std::runtime_error("Invalid conversation.");
         auto & e=*reinterpret_cast<Engine *>(handle);
@@ -97,7 +100,7 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_bonsai_pocket_LiquidNativeBridge_g
             const auto prompt=session->prompt().str();
             const int n=-llama_tokenize(vocab,prompt.data(),prompt.size(),nullptr,0,true,true);
             if(n<=0) throw std::runtime_error("Could not prepare this message.");
-            if(n+maxTokens<=CONTEXT) {
+            if(n+maxTokens+reasoningReserve<=CONTEXT) {
                 tokens.resize(n);llama_tokenize(vocab,prompt.data(),prompt.size(),tokens.data(),n,true,true);break;
             }
             if(input.messages.size()<=2) throw std::runtime_error("This message is too long. Try a shorter message or a new chat.");
@@ -105,12 +108,25 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_bonsai_pocket_LiquidNativeBridge_g
             input.messages.erase(input.messages.begin()+1,input.messages.begin()+end);++dropped;
         }
         auto sampler=std::unique_ptr<llama_sampler,decltype(&llama_sampler_free)>(llama_sampler_chain_init(llama_sampler_chain_default_params()),llama_sampler_free);
+        auto tag=[&](const std::string & value) {
+            const int n=-llama_tokenize(vocab,value.data(),value.size(),nullptr,0,false,true);
+            if(n<=0) throw std::runtime_error("Could not prepare LFM3 reasoning control.");
+            std::vector<llama_token> result(n);
+            llama_tokenize(vocab,value.data(),value.size(),result.data(),n,false,true);
+            return result;
+        };
+        const auto beginThinking=tag("<think>"), endThinking=tag("</think>");
+        // The generation prompt already opens <think>. Bound that span before sampling
+        // so a short response limit cannot be consumed entirely by hidden reasoning.
+        llama_sampler_chain_add(sampler.get(),common_reasoning_budget_init(vocab,{beginThinking},{endThinking},endThinking,reasoningBudget,REASONING_BUDGET_COUNTING));
         // Liquid's general chat defaults, independent of the Bonsai sampling profile.
         llama_sampler_chain_add(sampler.get(),llama_sampler_init_top_k(50));
-        llama_sampler_chain_add(sampler.get(),llama_sampler_init_penalties(llama_vocab_n_tokens(vocab),64,1.1f,0.0f,0.0f));
+        auto * penalties=llama_sampler_init_penalties(llama_vocab_n_tokens(vocab),64,1.1f,0.0f,0.0f);
+        llama_sampler_chain_add(sampler.get(),penalties);
         llama_sampler_chain_add(sampler.get(),llama_sampler_init_temp(0.1f));
         llama_sampler_chain_add(sampler.get(),llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
-        for(auto token:tokens) llama_sampler_accept(sampler.get(),token);
+        // Prefill only the repetition sampler; prompt tokens must not spend the budget.
+        for(auto token:tokens) llama_sampler_accept(penalties,token);
         for(size_t offset=0;offset<tokens.size() && !e.stop;offset+=256) {
             auto batch=llama_batch_get_one(tokens.data()+offset,std::min<size_t>(256,tokens.size()-offset));
             if(llama_decode(e.ctx,batch)!=0 && !e.stop) throw std::runtime_error("LFM3 could not process this prompt. Try reloading the model.");
@@ -118,28 +134,30 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_bonsai_pocket_LiquidNativeBridge_g
         const double promptMs=ms(started);const auto decodeStart=Clock::now();
         auto callbackClass=env->GetObjectClass(callback);
         auto method=env->GetMethodID(callbackClass,"onUpdate","([BIDDII)V");env->DeleteLocalRef(callbackClass);
-        int count=0;
+        int count=0, answerTokens=0;
         auto emit=[&](const std::string & content) {
             auto data=env->NewByteArray(content.size());
             env->SetByteArrayRegion(data,0,content.size(),reinterpret_cast<const jbyte *>(content.data()));
             env->CallVoidMethod(callback,method,data,count,promptMs,ms(decodeStart),dropped,static_cast<int>(tokens.size()));
             env->DeleteLocalRef(data);
         };
-        for(;count<maxTokens && !e.stop;) {
+        for(;count<maxTokens+reasoningReserve && answerTokens<maxTokens && !e.stop;) {
             auto token=llama_sampler_sample(sampler.get(),e.ctx,-1);
             if(llama_vocab_is_eog(vocab,token)) break;
             char piece[512];const int n=llama_token_to_piece(vocab,token,piece,sizeof(piece),0,true);
             if(n<0) throw std::runtime_error("Unexpected LFM3 token size.");
             common_chat_input chunk;chunk.append(std::string(piece,n),token);++count;
             // Parse reasoning separately, including tags split across streaming tokens.
-            emit(session->feed(chunk).content);
+            const auto & answer=session->feed(chunk).content;
+            if(!answer.empty()) ++answerTokens;
+            emit(answer);
             if(env->ExceptionCheck()) return nullptr;
             auto batch=llama_batch_get_one(&token,1);
             if(llama_decode(e.ctx,batch)!=0 && !e.stop) throw std::runtime_error("LFM3 generation failed. Try a new chat.");
         }
         emit(session->finish().content);
         if(env->ExceptionCheck()) return nullptr;
-        const std::string finish=e.stop ? "stopped" : count==maxTokens ? "length" : "complete";
+        const std::string finish=e.stop ? "stopped" : (answerTokens>=maxTokens || count>=maxTokens+reasoningReserve) ? "length" : "complete";
         __android_log_print(ANDROID_LOG_INFO,"LiquidMetrics","tokens=%d prompt_tokens=%zu prompt_ms=%.0f decode_ms=%.0f dropped=%d finish=%s",count,tokens.size(),promptMs,ms(decodeStart),dropped,finish.c_str());
         return env->NewStringUTF(finish.c_str());
     } catch(const std::exception & ex) {fail(env,ex);return nullptr;}

@@ -11,7 +11,9 @@ import android.view.ViewGroup
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -19,6 +21,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Rule
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -29,6 +32,16 @@ import java.util.concurrent.TimeUnit
 class CanvasDeviceTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
     private val inst get()=InstrumentationRegistry.getInstrumentation()
+    @Before fun keepTestVisible() {compose.runOnIdle {compose.activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)}}
+    @Test fun generatedScriptErrorsAreVisibleAndThemeMatched() {
+        val broken=CodeArtifact("error.html","<!doctype html><html><body><script>throw new Error('Ember QA script error')</script></body></html>","html")
+        var reported=""
+        compose.activity.setContent {EmberTheme(true) {CanvasPreview(broken,emptyList(),Modifier.fillMaxSize(),onFix={reported=it})}}
+        compose.waitUntil(20_000) {runCatching {compose.onNodeWithText("Ember QA script error",substring=true).assertExists()}.isSuccess}
+        compose.onNodeWithText("Open Code to edit",substring=true).assertExists()
+        compose.onNodeWithText("Fix with Ember").performClick()
+        assertTrue(reported.contains("Ember QA script error"))
+    }
     private fun findWebView(view:View):SandboxWebView? {
         if(view is SandboxWebView) return view
         if(view is ViewGroup) for(i in 0 until view.childCount) findWebView(view.getChildAt(i))?.let {return it}
