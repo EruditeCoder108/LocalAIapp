@@ -1,0 +1,13 @@
+Speech test fixture: 5105-28240-0004 from the LibriSpeech ASR corpus (test-clean).
+LibriSpeech is by Vassil Panayotov, Guoguo Chen, Daniel Povey and Sanjeev Khudanpur,
+derived from LibriVox public-domain audiobooks, licensed CC BY 4.0.
+https://www.openslr.org/12
+https://creativecommons.org/licenses/by/4.0/
+
+The WAV conversion used by the Android tests was obtained from:
+https://github.com/eschmidbauer/phonon-2-c
+Commit: c4b860f6ad745369d6f21599d6e23d381c1fcc7a
+Path: tests/data/5105-28240-0004.wav
+Git blob SHA-1: bc774f842a125385969fe1d9cac96be7f53d641f
+
+This recording is included only in the test APK. No user recordings are included.

@@ -3,7 +3,8 @@ package dev.bonsai.pocket
 /** Keep conversation length preferences from silently truncating downloadable code. */
 object GenerationPolicy {
     private val codeRequest=Regex("(?i)\\b(html|css|svg|javascript|typescript|python|kotlin|java|code|coding|script|webpage|website|single[ -]file|self[ -]contained)\\b|\\.(html?|svg|css|js|py|kt)\\b")
-    fun isCodeRequest(text:String)=codeRequest.containsMatchIn(text)
+    private val spokenCode=Regex("(?i)\\b(?:h[ .-]*t[ .-]*m[ .-]*l|c[ .-]*s[ .-]*s|s[ .-]*v[ .-]*g|j[ .-]*s|web[ -]+(?:page|site|app))\\b")
+    fun isCodeRequest(text:String)=codeRequest.containsMatchIn(text) || spokenCode.containsMatchIn(text)
     fun followsCode(history:List<Message>)=history.lastOrNull()?.let {it.role=="assistant" && CodeArtifacts.parse(it.text).any {part->part is ResponsePart.File}} ?: false
     fun retryWithWeb(message:Message)=message.sources.isNotEmpty() || message.note.contains("Web search") || message.text.startsWith("Web search could not finish:")
     fun answerTokens(text:String,canvas:Boolean,preference:Int,codeContext:Boolean=false)=if(canvas || codeContext || isCodeRequest(text)) 2048 else preference.coerceIn(256,2048)

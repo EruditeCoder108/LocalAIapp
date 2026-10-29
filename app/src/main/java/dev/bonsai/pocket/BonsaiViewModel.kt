@@ -19,6 +19,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -74,7 +75,7 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
     fun imageFile(name:String)=File(getApplication<Application>().filesDir,"images/${File(name).name}")
     fun installed(model:ModelSpec)=fileFor(model).length()==model.bytes
     val visionInstalled get()=selectedModel.supportsVision && visionFile().length()==selectedModel.visionBytes
-    val canSwitch get()=!generating && !preparingImage && !downloading && modelState!=ModelState.LOADING && modelState!=ModelState.IMPORTING
+    val canSwitch get()=!generating && !preparingImage && !downloading && !dictation.busy && modelState!=ModelState.LOADING && modelState!=ModelState.IMPORTING
     @Volatile private var handle = 0L
     @Volatile private var loadedBackend:InferenceBackend = NativeBridge
     @Volatile private var foreground = true
@@ -94,6 +95,16 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
     var preparingImage by mutableStateOf(false); private set
     var historyLoaded by mutableStateOf(false); private set
     private var checkedVision=mutableSetOf<String>()
+    val dictation=DictationController(application,viewModelScope,beforeRecording={
+        val h=handle
+        if(h!=0L) {
+            handle=0;modelState=ModelState.LOADING;status="Making room for dictation…"
+            val backend=loadedBackend
+            withContext(engine+NonCancellable) {backend.unload(h)}
+            modelState=ModelState.ASLEEP
+        }
+        h!=0L
+    },restoreChat={released->if(released && foreground && modelState==ModelState.ASLEEP) load()})
 
     init {
         if(prefs.getInt("uiVersion",1)<2) { theme=2; prefs.edit().putInt("theme",2).putInt("uiVersion",2).apply() }
@@ -160,7 +171,7 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
             finally {exporting=false}
         }
     }
-    fun setForeground(value:Boolean) { foreground=value; if(!value) {stop();activeDownload?.cancel()} }
+    fun setForeground(value:Boolean) { foreground=value; if(!value) {stop();activeDownload?.cancel();dictation.cancel()} }
     fun downloadArtifact(file:CodeArtifact,onSaved:()->Unit) {
         if(exporting || Build.VERSION.SDK_INT<29) return
         exporting=true
@@ -226,7 +237,7 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun load() {
-        if(modelState!=ModelState.ASLEEP) return
+        if(modelState!=ModelState.ASLEEP || dictation.busy) return
         modelState=ModelState.LOADING; status="Checking model integrity…"; error=null
         viewModelScope.launch {
             try {
@@ -241,7 +252,7 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     fun unload() {
-        if(generating || modelState!=ModelState.READY) return
+        if(generating || dictation.busy || modelState!=ModelState.READY) return
         val h=handle; handle=0; modelState=ModelState.LOADING; status="Releasing memory…"
         val backend=loadedBackend
         engineExecutor.execute { backend.unload(h); main.post { refreshAfterUnload() } }
@@ -286,7 +297,7 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
     }
     fun clearAttachment() { if(pendingImage.isNotEmpty()) imageFile(pendingImage).delete(); pendingImage="" }
     fun attachImage(uri:Uri) {
-        if(generating || preparingImage) return
+        if(generating || preparingImage || dictation.busy) return
         if(!visionInstalled) { error="Image support for ${selectedModel.displayName} is not installed."; return }
         preparingImage=true
         val chatId=currentId
@@ -309,15 +320,15 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     fun newChat() {
-        if(generating || preparingImage || !historyLoaded) return
+        if(generating || preparingImage || dictation.busy || !historyLoaded) return
         clearAttachment()
         val empty=chats.firstOrNull { it.messages.isEmpty() }
         if(empty!=null) currentId=empty.id else { val c=Chat(); chats=listOf(c)+chats; currentId=c.id }
         liveMetrics=""; persist()
     }
-    fun openChat(id:String) { if(!generating && !preparingImage && chats.any { it.id==id }) { clearAttachment(); currentId=id; liveMetrics=""; persist() } }
+    fun openChat(id:String) { if(!generating && !preparingImage && !dictation.busy && chats.any { it.id==id }) { clearAttachment(); currentId=id; liveMetrics=""; persist() } }
     fun deleteChat(id:String) {
-        if(generating || preparingImage) return
+        if(generating || preparingImage || dictation.busy) return
         chats.firstOrNull { it.id==id }?.messages?.filter { it.image.isNotBlank() }?.forEach { imageFile(it.image).delete() }
         chats=chats.filterNot { it.id==id }.ifEmpty { listOf(Chat()) }
         if(currentId==id) { clearAttachment(); currentId=chats.first().id }
@@ -326,7 +337,7 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
     private fun updateMessages(id:String, transform:(List<Message>)->List<Message>) { chats=chats.map { if(it.id==id) it.copy(messages=transform(it.messages)) else it } }
     fun send(text:String,searchWeb:Boolean=false,canvas:Boolean=false,codeFile:CodeArtifact?=null):Boolean {
         val clean=text.trim().ifEmpty { if(pendingImage.isNotEmpty()) "Describe this image." else "" }
-        if(clean.isEmpty() || clean.length>8000 || generating || preparingImage || !historyLoaded) return false
+        if(clean.isEmpty() || clean.length>8000 || generating || preparingImage || dictation.busy || !historyLoaded) return false
         if(codeFile!=null && codeFile.source.length>7000) {error="This file is too large for an automatic repair in the model's active context. Open Code to edit it, or ask for a smaller file.";return false}
         val fact=MemoryStore.rememberCommand(clean)
         if(fact!=null && pendingImage.isEmpty() && !searchWeb) {
@@ -450,6 +461,7 @@ class BonsaiViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     override fun onCleared() {
+        dictation.close()
         activeDownload?.cancel()
         webSearch.cancel()
         val h=handle

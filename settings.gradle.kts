@@ -3,3 +3,4 @@ dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_P
 rootProject.name = "Ember"
 include(":app")
 include(":liquid-runtime")
+include(":phonon-runtime")

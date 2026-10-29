@@ -5,7 +5,7 @@ import org.junit.Test
 
 class GenerationPolicyTest {
     @Test fun codeGetsAnAnswerBudgetWithoutCanvas() {
-        listOf("generate gta game in html css js in a single file", "create button.html", "write Python to sort a CSV", "generate a self-contained html file for a gradient button").forEach {
+        listOf("generate gta game in html css js in a single file", "create button.html", "write Python to sort a CSV", "generate a self-contained html file for a gradient button", "Make a single H.T.M.L. file", "Build a web page with C S S").forEach {
             assertEquals(it,2048,GenerationPolicy.answerTokens(it,false,512))
         }
         assertEquals(512,GenerationPolicy.answerTokens("What is 17 times 6?",false,512))

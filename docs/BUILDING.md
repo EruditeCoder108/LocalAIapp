@@ -22,7 +22,9 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
 The public app uses application ID `io.github.eruditecoder108.ember`. The internal Kotlin/JNI namespace remains `dev.bonsai.pocket`; this does not select a model or change the displayed app name. It is a separate application from the personal development build.
 
-To upgrade the earlier personal phone build in place, build with `./setup.ps1 -ApplicationId dev.bonsai.pocket` or pass `'-PemberApplicationId=dev.bonsai.pocket'` to Gradle, then use `./install.ps1 -ApplicationId dev.bonsai.pocket -Serial YOUR_DEVICE_SERIAL`. The version code is 6 (0.2.1). Both app IDs display **Ember**. Preserve the original signing key and app ID; installation must succeed with `adb install -r` without uninstalling or clearing data. The installer checks the built package ID before installing.
+To upgrade the earlier personal phone build in place, build with `./setup.ps1 -ApplicationId dev.bonsai.pocket` or pass `'-PemberApplicationId=dev.bonsai.pocket'` to Gradle, then use `./install.ps1 -ApplicationId dev.bonsai.pocket -Serial YOUR_DEVICE_SERIAL`. The version code is 7 (0.3.0, development). Both app IDs display **Ember**. Preserve the original signing key and app ID; installation must succeed with `adb install -r` without uninstalling or clearing data. The installer checks the built package ID before installing.
+
+Phonon dictation uses the official Android ARM64 runtime `android-arm64-v8a-0.2.11`. `setup.ps1` downloads and verifies the archive and each native binary/header. Its generated JNI binaries remain ignored. The microphone button offers a separate, verified 164 MB English model download and requests microphone access only when starting a recording. See [Voice in Ember](VOICE.md) for architecture, language limits and device validation. Host build success does not establish that speech inference or live capture works on the phone.
 
 ## Install and models
 

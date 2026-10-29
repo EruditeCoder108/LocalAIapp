@@ -4,6 +4,7 @@ local.properties
 **/build/
 **/.cxx/
 vendor/
+phonon-runtime/src/main/jniLibs/
 *.gguf
 *.safetensors
 *.litertlm
