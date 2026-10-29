@@ -22,7 +22,9 @@ Host tests include golden-feature parity, PCM conversion, silence/bounds handlin
 - Lint reports zero errors (21 warnings and four hints, including dependency updates and existing platform/style advisories).
 - All ten packaged native libraries are ARM64 with load-segment alignment of at least 16 KB; APK ZIP alignment and signature verification pass. The speech JNI library exposes only its three JNI entry points.
 - The personal APK retains application ID `dev.bonsai.pocket`, uses version code 7, displays Ember, and has the same debug signing certificate as the previous personal build. It contains notices, but no weights, recordings or signing keys.
-- **Pending:** phone installation, native transcription, cancellation/process-memory measurements, light/dark device screenshots and a user-controlled live recording. ADB reported no connected device during this verification. This is a development build; on-device speech support is not yet established.
+- Installed version 0.3.0 in place on CMF Phone 2 Pro, preserving the app ID and signing key, after backing up chats, images, settings and memory. Both `SpeechDeviceTest` tests passed: verified installation/native transcription, separate service process, cancellation, temporary-audio deletion, light/dark sheet controls and unchanged microphone permission.
+- The prerecorded LibriSpeech fixture had zero word errors: preparation 910 ms, decode 417 ms, measured service PSS 707,387 KB after decoding and 53,795 KB after releasing the model. This single short sample does not establish general accuracy, peak memory or sustained performance.
+- **Pending:** a user-controlled live microphone recording and broader speech/thermal testing. Microphone access was not granted by the tests.
 
 To run the speech checks, build and install both debug APKs with the existing app ID and signing key using `adb install -r`, preserving all app data. Do not uninstall or clear data. Put the verified archive at `files/speech/phonon-2.5-en.bps.tar.zst` using `run-as` for a debuggable build, or install the model through the microphone sheet. Then run:
 
