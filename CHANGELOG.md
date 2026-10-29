@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 (development)
+
+- Add offline Phonon-2.5 English dictation with a microphone button and measured-audio dot-matrix animation. Transcripts enter the editable draft and are never sent automatically.
+- Add explicit microphone permission handling, cancellation, a 30-second limit, draft overflow recovery and deletion of temporary recordings.
+- Run speech inference in a private service process. Release the chat model while dictating and restore it afterward when previously loaded.
+- Pin and verify the Android runtime, model download and extracted files; include native/model attribution. Add safe resumable model setup.
+- Recognize spoken forms such as “H.T.M.L.” and “C S S” when choosing code response budgets.
+- Add independent Torch frontend fixtures, full-archive checks and device speech/permission/isolation tests.
+
 ## 0.2.1
 
 - Fix empty LFM3 replies when hidden reasoning consumed the entire response limit. Bound reasoning separately and preserve room for the visible answer.

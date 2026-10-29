@@ -86,7 +86,7 @@ class MainActivity:ComponentActivity() {
         super.onCreate(savedInstanceState); enableEdgeToEdge()
         setContent {
             val dark=when(vm.theme) { 1->false; 2->true; else->isSystemInDarkTheme() }
-            val processing=vm.generating || vm.preparingImage || vm.modelState==ModelState.LOADING || vm.modelState==ModelState.IMPORTING
+            val processing=vm.generating || vm.preparingImage || vm.modelState==ModelState.LOADING || vm.modelState==ModelState.IMPORTING || vm.dictation.processing
             DisposableEffect(processing) {
                 if(processing) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -148,6 +148,15 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     var sheet by remember { mutableStateOf<String?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var draft by rememberSaveable(vm.currentId) { mutableStateOf("") }
+    val voice=vm.dictation
+    val microphonePermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {granted->if(granted) voice.start() else voice.permissionDenied()}
+    fun startDictation() {
+        if(androidx.core.content.ContextCompat.checkSelfPermission(vm.getApplication(),android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED) voice.start()
+        else microphonePermission.launch(android.Manifest.permission.RECORD_AUDIO)
+    }
+    LaunchedEffect(voice.phase,voice.transcript) {
+        if(voice.phase==DictationPhase.RESULT) SpeechAudio.merge(draft,voice.transcript)?.let {draft=it;voice.consume()}
+    }
     var deleteId by remember { mutableStateOf<String?>(null) }
     var webEnabled by rememberSaveable {mutableStateOf(false)}
     var canvasEnabled by rememberSaveable {mutableStateOf(false)}
@@ -214,14 +223,14 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
         Scaffold(containerColor=colors.background,snackbarHost={SnackbarHost(snack)},topBar={
             Surface(color=colors.background.copy(alpha=0.97f)) {
                 Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal=12.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically) {
-                    IconButton(onClick={focus.clearFocus(); keyboard?.hide(); scope.launch { drawer.open() }}) { Icon(Icons.Outlined.Menu,"Open chat drawer") }
+                    IconButton(onClick={focus.clearFocus(); keyboard?.hide(); scope.launch { drawer.open() }},enabled=!voice.busy) { Icon(Icons.Outlined.Menu,"Open chat drawer") }
                     TextButton(onClick={showSheet("models")},enabled=vm.canSwitch,modifier=Modifier.testTag("modelPicker"),contentPadding=PaddingValues(horizontal=8.dp)) {
                         Micro(vm.selectedModel.header,color=colors.onSurface)
                         Icon(Icons.Outlined.KeyboardArrowDown,null,Modifier.padding(start=5.dp).size(17.dp))
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick={showSheet("settings")}) { Icon(Icons.Outlined.Tune,"Settings",Modifier.size(21.dp)) }
-                    IconButton(onClick=vm::newChat,enabled=!vm.generating && !vm.preparingImage) { Icon(Icons.Outlined.Edit,"New chat",Modifier.size(21.dp)) }
+                    IconButton(onClick={showSheet("settings")},enabled=!voice.busy) { Icon(Icons.Outlined.Tune,"Settings",Modifier.size(21.dp)) }
+                    IconButton(onClick=vm::newChat,enabled=!vm.generating && !vm.preparingImage && !voice.busy) { Icon(Icons.Outlined.Edit,"New chat",Modifier.size(21.dp)) }
                 }
             }
         },bottomBar={
@@ -259,7 +268,7 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                         Row(Modifier.padding(6.dp),verticalAlignment=Alignment.CenterVertically) {
                             Box {
                                 var toolsOpen by remember {mutableStateOf(false)}
-                                IconButton(onClick={toolsOpen=true},enabled=!vm.generating && !vm.preparingImage,modifier=Modifier.size(46.dp)) {Icon(Icons.Outlined.Add,"Chat tools",Modifier.size(23.dp))}
+                                IconButton(onClick={toolsOpen=true},enabled=!vm.generating && !vm.preparingImage && !voice.busy,modifier=Modifier.size(46.dp)) {Icon(Icons.Outlined.Add,"Chat tools",Modifier.size(23.dp))}
                                 DropdownMenu(expanded=toolsOpen,onDismissRequest={toolsOpen=false},containerColor=colors.surfaceContainerHigh) {
                                     DropdownMenuItem(text={Text(if(canvasEnabled) "Turn off canvas" else "Canvas")},leadingIcon={Icon(Icons.Outlined.Code,null)},onClick={toolsOpen=false;canvasEnabled=!canvasEnabled},modifier=Modifier.testTag("canvasToggle"))
                                     DropdownMenuItem(text={Text("Attach image")},leadingIcon={Icon(Icons.Outlined.Image,null)},enabled=vm.visionInstalled,onClick={toolsOpen=false;photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))})
@@ -267,8 +276,9 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                                     DropdownMenuItem(text={Text("Memory")},leadingIcon={Icon(Icons.Outlined.BookmarkBorder,null)},onClick={toolsOpen=false;showSheet("memory")})
                                 }
                             }
-                            TextField(draft,{if(it.length<=8000) draft=it},modifier=Modifier.weight(1f).heightIn(min=46.dp,max=150.dp).testTag("messageInput"),placeholder={Text(if(vm.preparingImage) "Preparing image…" else "Message Ember",style=MaterialTheme.typography.bodyLarge)},textStyle=MaterialTheme.typography.bodyLarge,colors=TextFieldDefaults.colors(focusedContainerColor=Color.Transparent,unfocusedContainerColor=Color.Transparent,focusedIndicatorColor=Color.Transparent,unfocusedIndicatorColor=Color.Transparent),keyboardOptions=KeyboardOptions(imeAction=ImeAction.Send),keyboardActions=KeyboardActions(onSend={send()}),maxLines=5)
-                            FilledIconButton(onClick={if(vm.generating) vm.stop() else send()},enabled=vm.generating || ((draft.isNotBlank() || vm.pendingImage.isNotEmpty()) && !vm.preparingImage && (vm.modelState==ModelState.READY || (!webEnabled && MemoryStore.rememberCommand(draft)!=null && vm.memoryReady && !vm.memoryBusy))),interactionSource=sendPress.first,modifier=Modifier.size(46.dp).then(sendPress.second),colors=IconButtonDefaults.filledIconButtonColors(containerColor=Signal,contentColor=Color.White,disabledContainerColor=colors.onSurface.copy(alpha=0.08f),disabledContentColor=colors.onSurface.copy(alpha=0.3f))) { Icon(if(vm.generating) Icons.Outlined.Stop else Icons.Outlined.ArrowUpward,if(vm.generating) "Stop response" else "Send message",Modifier.size(21.dp)) }
+                            TextField(draft,{if(it.length<=8000) draft=it},enabled=!voice.busy,modifier=Modifier.weight(1f).heightIn(min=46.dp,max=150.dp).testTag("messageInput"),placeholder={Text(if(vm.preparingImage) "Preparing image…" else "Message Ember",style=MaterialTheme.typography.bodyLarge)},textStyle=MaterialTheme.typography.bodyLarge,colors=TextFieldDefaults.colors(focusedContainerColor=Color.Transparent,unfocusedContainerColor=Color.Transparent,focusedIndicatorColor=Color.Transparent,unfocusedIndicatorColor=Color.Transparent),keyboardOptions=KeyboardOptions(imeAction=ImeAction.Send),keyboardActions=KeyboardActions(onSend={send()}),maxLines=5)
+                            IconButton(onClick={focus.clearFocus();keyboard?.hide();voice.open();if(voice.phase==DictationPhase.READY) startDictation()},enabled=vm.canSwitch && !voice.busy && vm.historyLoaded,modifier=Modifier.size(46.dp).testTag("dictationButton")) {Icon(Icons.Outlined.Mic,"Dictate message",Modifier.size(21.dp))}
+                            FilledIconButton(onClick={if(vm.generating) vm.stop() else send()},enabled=!voice.busy && (vm.generating || ((draft.isNotBlank() || vm.pendingImage.isNotEmpty()) && !vm.preparingImage && (vm.modelState==ModelState.READY || (!webEnabled && MemoryStore.rememberCommand(draft)!=null && vm.memoryReady && !vm.memoryBusy)))),interactionSource=sendPress.first,modifier=Modifier.size(46.dp).then(sendPress.second),colors=IconButtonDefaults.filledIconButtonColors(containerColor=Signal,contentColor=Color.White,disabledContainerColor=colors.onSurface.copy(alpha=0.08f),disabledContentColor=colors.onSurface.copy(alpha=0.3f))) { Icon(if(vm.generating) Icons.Outlined.Stop else Icons.Outlined.ArrowUpward,if(vm.generating) "Stop response" else "Send message",Modifier.size(21.dp)) }
                         }
                     }
                 }
@@ -293,6 +303,10 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
                 }
         }
     }
+    DictationSheet(voice,onStart=::startDictation,onReplaceDraft={draft=it},onOpenPermissions={
+        val app=vm.getApplication<android.app.Application>()
+        app.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:${app.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    })
     vm.error?.let { AlertDialog(onDismissRequest=vm::dismissError,title={Text("Could not complete that")},text={Text(it)},confirmButton={TextButton(onClick=vm::dismissError) {Text("OK")}}) }
     deleteId?.let { id -> AlertDialog(onDismissRequest={deleteId=null},title={Text("Delete conversation?")},text={Text("This removes the chat and its attached images from this phone.")},confirmButton={TextButton(onClick={vm.deleteChat(id);deleteId=null}) {Text("Delete",color=Signal)}},dismissButton={TextButton(onClick={deleteId=null}) {Text("Cancel")}}) }
     if(sheet!=null) ModalBottomSheet(onDismissRequest={sheet=null},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=colors.surface) {
@@ -430,5 +444,5 @@ private fun Modifier.dotGrid(color:Color)=drawWithCache {
     OutlinedButton(onClick=onImport,enabled=vm.modelState==ModelState.ASLEEP || vm.modelState==ModelState.MISSING,modifier=Modifier.fillMaxWidth()) {Text("Import ${vm.selectedModel.shortName} model file")}
     if(vm.selectedModel.supportsVision) TextButton(onClick=onVisionImport,enabled=vm.modelState==ModelState.ASLEEP || vm.modelState==ModelState.MISSING,modifier=Modifier.fillMaxWidth()) {Text("Import ${vm.selectedModel.shortName} vision file")}
     HorizontalDivider(Modifier.padding(vertical=22.dp),color=c.outlineVariant)
-    Text("EMBER ${BuildConfig.VERSION_NAME}\nLFM3 by Liquid AI · LFM Open License v1.0\nBonsai by PrismML · Based on Qwen · Apache 2.0\nQwen3.5 Heretic by darrellbest · Apache 2.0\nAI can make mistakes. Check important answers.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
+    Text("EMBER ${BuildConfig.VERSION_NAME}\nLFM3 by Liquid AI · LFM Open License v1.0\nBonsai by PrismML · Based on Qwen · Apache 2.0\nQwen3.5 Heretic by darrellbest · Apache 2.0\nPhonon 2.5 by Fermion Research · Based on NVIDIA Parakeet · CC BY 4.0\nPhonon runtime · Apache 2.0\nAI can make mistakes. Check important answers.",style=MaterialTheme.typography.bodySmall,color=c.onSurfaceVariant)
 }

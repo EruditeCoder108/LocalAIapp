@@ -17,6 +17,8 @@ The interface uses a restrained black, white and red palette, dot-matrix letteri
 
 Version 0.2.1 fixes empty LFM3 code replies, adds retry and Canvas repair actions, and matches app panels to the selected theme. See the [changelog](CHANGELOG.md) and [reliability audit](docs/AUDIT-0.2.1.md) for validation and model-quality limits.
 
+The current development build adds **Phonon-2.5 English dictation**: microphone input, an audio-driven dot matrix, and transcription into the message draft. See [Voice in Ember](docs/VOICE.md) for setup, privacy, supported language and device-test requirements. Liquid Audio/Omni voice chat is separate work.
+
 ## Start in a minute
 
 1. Download **[Ember-0.1.0-arm64.apk](https://github.com/EruditeCoder108/LocalAIapp/releases/download/v0.1.0/Ember-0.1.0-arm64.apk)** and install it on a compatible Android phone.
@@ -87,4 +89,4 @@ Issues are useful when they include the device/Android version, selected model, 
 
 Created by **[EruditeCoder108](https://github.com/EruditeCoder108)**. Independent project; not affiliated with PrismML, Qwen, Google or Nothing.
 
-Application source: [MIT](LICENSE). Bonsai weights: [Apache 2.0](licenses/model-LICENSE.txt), with [PrismML/Qwen notices](licenses/model-NOTICE.txt). LFM3 weights: [LFM Open License v1.0](licenses/liquid-model-LICENSE.txt), with [Liquid AI attribution and pinned artifact details](licenses/liquid-model-NOTICE.txt). llama.cpp and jsoup: MIT. Geist: SIL Open Font License. The app's abstract logo was generated with AI during development; the README illustration is repository-native SVG artwork.
+Application source: [MIT](LICENSE). Bonsai weights: [Apache 2.0](licenses/model-LICENSE.txt), with [PrismML/Qwen notices](licenses/model-NOTICE.txt). LFM3 weights: [LFM Open License v1.0](licenses/liquid-model-LICENSE.txt), with [Liquid AI attribution and pinned artifact details](licenses/liquid-model-NOTICE.txt). Phonon weights: [CC BY 4.0](licenses/phonon-model-LICENSE.txt), with [Fermion Research/NVIDIA attribution](licenses/phonon-model-NOTICE.txt); native runtime: [Apache 2.0](licenses/phonon-runtime-LICENSE.txt). llama.cpp, nlohmann/json and jsoup: MIT. zstd-jni: BSD 2-Clause; Zstandard: BSD 3-Clause. Geist: SIL Open Font License. Dependency licenses and notices are included in the APK assets. The app's abstract logo was generated with AI during development; the README illustration is repository-native SVG artwork.

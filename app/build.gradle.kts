@@ -10,8 +10,8 @@ android {
         applicationId = providers.gradleProperty("emberApplicationId").getOrElse("io.github.eruditecoder108.ember")
         minSdk = 28
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.2.1"
+        versionCode = 7
+        versionName = "0.3.0"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_shared", "-DCMAKE_BUILD_TYPE=Release"); cppFlags += "-std=c++17" } }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -25,6 +25,8 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 dependencies {
     implementation(project(":liquid-runtime"))
+    implementation(project(":phonon-runtime"))
+    implementation("com.github.luben:zstd-jni:1.5.7-25@aar")
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.17.0")
@@ -35,9 +37,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("org.jsoup:jsoup:1.21.2")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.github.luben:zstd-jni:1.5.7-25")
     androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+tasks.withType<Test>().configureEach {systemProperty("ember.phononArchive",providers.gradleProperty("phononArchive").getOrElse(""))}
